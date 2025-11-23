@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+clear
+
+# Colors
+RED='\033[0;31m'
+GRN='\033[0;32m'
+CYN='\033[0;36m'
+YEL='\033[1;33m'
+NC='\033[0m'
+
+# GMK ASCII
+echo -e "${YEL}"
+cat << "EOF"
+​█████████    ██╔═══██╗██╔═══██╗
+██╔═════╗    ██║   ╔═╗ ║██║   ╔═╗ ║
+██║          ██║   ██║ ██║   ██║
+██║ ╔═══╝    ██║   ██║██║   ██║
+██║ ║        ██║   ╚═╝ ██║ ╚═╝ ██║
+╚═╝ ╚═╝      ╚═╝     ╚═╝
+EOF
+echo -e "${NC}"
+
+echo -e "${GRN}🔥 Welcome to GamingWithKayden Multi-Setup Script${NC}"
+
+main_menu() {
+    echo -e "\nSelect Environment:"
+    echo "1) GitHub"
+    echo "2) Codesandbox"
+    echo "3) Google IDX"
+    echo "4) Cloudflare (with GPG key)"
+    echo "5) Playit Installation"
+    echo "0) Exit"
+    read -rp "Enter choice: " choice
+
+    case $choice in
+        1) env_menu "GitHub" ;;
+        2) env_menu "Codesandbox" ;;
+        3) env_menu "GoogleIDX" ;;
+        4) cloudflare_setup ;;
+        5) playit_setup ;;
+        0) echo "Exiting..."; exit 0 ;;
+        *) echo "Invalid option!"; main_menu ;;
+    esac
+}
+
+env_menu() {
+    ENV_NAME=$1
+    echo -e "\n${CYN}Selected $ENV_NAME${NC}"
+    echo "1) Setup Pterodactyl Panel"
+    echo "2) Setup Pterodactyl Wings"
+    echo "0) Back to main menu"
+    read -rp "Enter choice: " subchoice
+
+    case $subchoice in
+        1) setup_panel "$ENV_NAME" ;;
+        2) setup_wings "$ENV_NAME" ;;
+        0) main_menu ;;
+        *) echo "Invalid option!"; env_menu "$ENV_NAME" ;;
+    esac
+}
+
+# -----------------------------
+# Panel setup function
+setup_panel() {
+    ENV=$1
+    echo -e "${GRN}Setting up Pterodactyl Panel for $ENV...${NC}"
+
+    mkdir -p pterodactyl/panel
+    cd pterodactyl/panel || exit
+    mkdir -p ./data/{database,var,nginx,certs,logs}
+
+    # Write docker-compose.yml
+    cat <<EOF > docker-compose.yml
+version: '3.8'
+x-common:
+  database: &db-environment
+    MYSQL_PASSWORD: &db-password "CHANGE_ME"
+    MYSQL_ROOT_PASSWORD: "CHANGE_ME_TOO"
+  panel: &panel-environment
+    APP_URL: "https://pterodactyl.example.com"
+    APP_TIMEZONE: "UTC"
+    APP_SERVICE_AUTHOR: "noreply@example.com"
+    TRUSTED_PROXIES: "*"
+  mail: &mail-environment
+    MAIL_FROM: "noreply@example.com"
+    MAIL_DRIVER: "smtp"
+    MAIL_HOST: "mail"
+    MAIL_PORT: "1025"
+    MAIL_USERNAME: ""
+    MAIL_PASSWORD: ""
+    MAIL_ENCRYPTION: "true"
+services:
+  database:
+    image: mariadb:10.5
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - "./data/database:/var/lib/mysql"
+    environment:
+      <<: *db-environment
+      MYSQL_DATABASE: "panel"
+      MYSQL_USER: "pterodactyl"
+  cache:
+    image: redis:alpine
+    restart: always
+  panel:
+    image: ghcr.io/pterodactyl/panel:latest
+    restart: always
+    ports:
+      - "8030:80"
+      - "4433:443"
+    links:
+      - database
+      - cache
+    volumes:
+      - "./data/var:/app/var"
+      - "./data/nginx:/etc/nginx/http.d"
+      - "./data/certs:/etc/letsencrypt"
+      - "./data/logs:/app/storage/logs"
+    environment:
+      <<: [*panel-environment, *mail-environment]
+      DB_PASSWORD: *db-password
+      APP_ENV: "production"
+      APP_ENVIRONMENT_ONLY: "false"
+      CACHE_DRIVER: "redis"
+      SESSION_DRIVER: "redis"
+      QUEUE_DRIVER: "redis"
+      REDIS_HOST: "cache"
+      DB_HOST: "database"
+      DB_PORT: "3306"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+EOF
+
+    # Start containers
+    if [ "$ENV" = "Codesandbox" ]; then
+        docker compose up -d
+    else
+        if command -v "docker compose" &>/dev/null; then
+            docker compose up -d
+        else
+            docker-compose up -d
+        fi
+    fi
+
+    # Admin user creation
+    if [ "$ENV" = "Codesandbox" ]; then
+        docker compose run --rm panel php artisan p:user:make
+    else
+        if command -v "docker compose" &>/dev/null; then
+            docker compose run --rm panel php artisan p:user:make
+        else
+            docker-compose run --rm panel php artisan p:user:make
+        fi
+    fi
+
+    echo -e "${GRN}✅ Panel setup complete for $ENV${NC}"
+    cd ../../
+    env_menu "$ENV"
+}
+
+# -----------------------------
+# Wings setup function
+setup_wings() {
+    ENV=$1
+    echo -e "${GRN}Setting up Pterodactyl Wings for $ENV...${NC}"
+
+    mkdir -p pterodactyl/wings
+    cd pterodactyl/wings || exit
+
+    # Write docker-compose.yml
+    cat <<EOF > docker-compose.yml
+version: '3.8'
+services:
+  wings:
+    image: ghcr.io/pterodactyl/wings:v1.6.1
+    restart: always
+    networks:
+      - wings0
+    ports:
+      - "8080:8080"
+      - "2022:2022"
+      - "443:443"
+    tty: true
+    environment:
+      TZ: "UTC"
+      WINGS_UID: 988
+      WINGS_GID: 988
+      WINGS_USERNAME: pterodactyl
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/containers/:/var/lib/docker/containers/
+      - /etc/pterodactyl/:/etc/pterodactyl/
+      - /var/lib/pterodactyl/:/var/lib/pterodactyl/
+      - /var/log/pterodactyl/:/var/log/pterodactyl/
+      - /tmp/pterodactyl/:/tmp/pterodactyl/
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+networks:
+  wings0:
+    name: wings0
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: wings0
+EOF
+
+    # Start Docker
+    if [ "$ENV" = "Codesandbox" ]; then
+        docker compose up -d
+    else
+        if command -v "docker compose" &>/dev/null; then
+            docker compose up -d
+        else
+            docker-compose up -d
+        fi
+    fi
+
+    echo -e "${GRN}✅ Wings setup complete for $ENV${NC}"
+    cd ../../
+    env_menu "$ENV"
+}
+
+# -----------------------------
+# Cloudflare setup
+cloudflare_setup() {
+    echo -e "${GRN}Setting up Cloudflare GPG key...${NC}"
+    curl -fsSL https://pkg.cloudflare.com/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-archive-keyring.gpg
+    echo 'deb [signed-by=/usr/share/keyrings/cloudflare-archive-keyring.gpg] https://pkg.cloudflare.com/ jammy main' | sudo tee /etc/apt/sources.list.d/cloudflare.list
+    sudo apt update
+    sudo apt install cloudflare -y
+    echo -e "${GRN}✅ Cloudflare setup complete${NC}"
+    main_menu
+}
+
+# -----------------------------
+# Playit setup
+playit_setup() {
+    echo -e "${GRN}Installing Playit agent...${NC}"
+    curl -fsSL https://raw.githubusercontent.com/gmkayden/playit/refs/heads/main/playit-ins | bash
+    echo -e "${GRN}✅ Playit installation complete${NC}"
+    main_menu
+}
+
+# -----------------------------
+# Start script
+main_menu
