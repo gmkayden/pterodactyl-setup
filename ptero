@@ -11,12 +11,13 @@ NC='\033[0m'
 # GMK ASCII
 echo -e "${YEL}"
 cat << "EOF"
-​█████████    ██╔═══██╗██╔═══██╗
-██╔═════╗    ██║   ╔═╗ ║██║   ╔═╗ ║
-██║          ██║   ██║ ██║   ██║
-██║ ╔═══╝    ██║   ██║██║   ██║
-██║ ║        ██║   ╚═╝ ██║ ╚═╝ ██║
-╚═╝ ╚═╝      ╚═╝     ╚═╝
+ ██████╗ ███╗   ███╗██╗  ██╗
+██╔════╝ ████╗ ████║██║ ██╔╝
+██║  ███╗██╔████╔██║█████╔╝ 
+██║   ██║██║╚██╔╝██║██╔═██╗ 
+╚██████╔╝██║ ╚═╝ ██║██║  ██╗
+ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝
+                            
 EOF
 echo -e "${NC}"
 
@@ -27,7 +28,7 @@ main_menu() {
     echo "1) GitHub"
     echo "2) Codesandbox"
     echo "3) Google IDX"
-    echo "4) Cloudflare (with GPG key)"
+    echo "4) Cloudflare"
     echo "5) Playit Installation"
     echo "0) Exit"
     read -rp "Enter choice: " choice
